@@ -1,0 +1,332 @@
+# Project Structure — Modules and Clean Architecture
+
+Right now everything lives in `src/main.rs`. As the program grows across five modes with HTTP requests, a database, hardware sensors, and formatted output, that single file becomes impossible to navigate.
+
+This document covers two things:
+
+1. **How Rust modules work** — how to split code across files and folders
+2. **How to apply clean architecture** — which code goes in which layer and why
+
+---
+
+## The target structure
+
+```
+src/
+├── main.rs              ← entry point only — parses args, dispatches
+│
+├── domain/              ← pure business logic, no external crates
+│   ├── mod.rs
+│   ├── reading.rs       ← the Reading struct (one row of data)
+│   └── score.rs         ← health score formula and status label
+│
+├── app/                 ← use cases — orchestrate the other layers
+│   ├── mod.rs
+│   ├── snapshot.rs      ← take one current reading
+│   ├── watch.rs         ← poll on a loop and save readings
+│   └── history.rs       ← retrieve past readings
+│
+├── infra/               ← external systems: hardware, network, database
+│   ├── mod.rs
+│   ├── sensors.rs       ← reads CPU temp and usage via sysinfo
+│   ├── weather.rs       ← fetches city and outdoor temp via HTTP
+│   └── db.rs            ← SQLite: open, create schema, insert, query
+│
+└── interface/           ← everything the user sees and types
+    ├── mod.rs
+    ├── cli.rs           ← clap Cli struct and Commands enum
+    └── display.rs       ← all formatting and println! calls
+```
+
+---
+
+## How Rust modules work
+
+### Declaring a module
+
+In Rust, a folder is not automatically a module. You must declare it explicitly.
+
+In `src/main.rs`, declare each top-level module:
+
+```rust
+mod domain;
+mod app;
+mod infra;
+mod interface;
+
+fn main() { ... }
+```
+
+For each `mod name;` declaration, Rust looks for either:
+- `src/name.rs` — a single file module
+- `src/name/mod.rs` — a folder module with submodules
+
+We are using folders, so each layer needs a `mod.rs` file inside it.
+
+### `mod.rs` — the entry point for a folder
+
+`src/domain/mod.rs` declares what is inside the `domain` module:
+
+```rust
+pub mod reading;
+pub mod score;
+```
+
+`pub mod` means the submodule is visible to code outside `domain`. Without `pub`, the submodule exists but nothing can use it from the outside.
+
+### `pub` — controlling visibility
+
+By default, everything in Rust is private — only visible inside the same module. Use `pub` to make things accessible from other modules:
+
+```rust
+// src/domain/reading.rs
+
+pub struct Reading {          // pub: other modules can use this type
+    pub timestamp: String,    // pub: other modules can read this field
+    pub cpu_temp: f32,
+    pub cpu_usage: f32,
+    pub outdoor_temp: Option<f32>,
+    pub city: Option<String>,
+}
+```
+
+If you forget `pub` on a struct field, Rust will tell you:
+```
+error[E0616]: field `cpu_temp` of struct `Reading` is private
+```
+
+### Importing from another module
+
+Use `use crate::...` to import from elsewhere in your own crate:
+
+```rust
+// src/app/snapshot.rs
+
+use crate::domain::reading::Reading;
+use crate::infra::sensors;
+use crate::infra::weather;
+```
+
+`crate` always refers to the root of your own project. Think of it as the starting point of every path inside your codebase.
+
+### Re-exporting for convenience
+
+`mod.rs` files can re-export things to simplify imports for callers:
+
+```rust
+// src/domain/mod.rs
+
+pub mod reading;
+pub mod score;
+
+pub use reading::Reading;      // callers can write `use crate::domain::Reading`
+pub use score::HealthScore;    // instead of `use crate::domain::reading::Reading`
+```
+
+This is optional but makes imports in other layers cleaner.
+
+---
+
+## The four layers
+
+### Layer 1 — `domain/`
+
+The domain layer contains your core data types and business rules. It has **no external crate dependencies** — only the Rust standard library.
+
+This is the most important constraint. If `domain/` imports `sysinfo`, `rusqlite`, or `reqwest`, the entire point of the layer is lost. Domain logic should be testable without a database, without a network, without hardware.
+
+**What goes here:**
+
+`reading.rs` — the `Reading` struct. One reading is one row of data:
+
+```rust
+pub struct Reading {
+    pub timestamp: String,
+    pub cpu_temp: f32,
+    pub cpu_usage: f32,
+    pub outdoor_temp: Option<f32>,
+    pub city: Option<String>,
+}
+```
+
+`score.rs` — the `HealthScore` logic. The formula and thresholds live here, not scattered across display functions:
+
+```rust
+pub struct HealthScore {
+    pub value: f32,         // 0.0 – 100.0
+    pub status: Status,
+    pub ambient_delta: Option<f32>,
+}
+
+pub enum Status {
+    Cool,
+    Warm,
+    Hot,
+}
+
+impl HealthScore {
+    pub fn from_reading(reading: &Reading) -> Self { ... }
+}
+```
+
+### Layer 2 — `infra/`
+
+The infra layer talks to the outside world: hardware, network, and disk. Each file wraps one external dependency.
+
+**What goes here:**
+
+`sensors.rs` — wraps `sysinfo`. Returns the CPU temperature and usage. Nothing in this file knows about the weather or the database.
+
+`weather.rs` — wraps `reqwest` + `serde`. Fetches location and outdoor temperature. Returns a plain `(String, f32)` tuple or an error — the domain types, not raw JSON.
+
+`db.rs` — wraps `rusqlite`. Opens the database, creates the schema if needed, inserts a `Reading`, queries a `Vec<Reading>`. The domain `Reading` type is what goes in and comes out — no raw SQL types leak into the rest of the program.
+
+### Layer 3 — `app/`
+
+The app layer contains **use cases** — it orchestrates the other layers without knowing how they work. It calls `infra` to get data, builds domain types, and returns results. It never formats output.
+
+**What goes here:**
+
+`snapshot.rs` — calls `sensors` and `weather`, assembles a `Reading`, returns it.
+
+```rust
+pub fn take_snapshot() -> Result<Reading, Box<dyn std::error::Error>> {
+    let (cpu_temp, cpu_usage) = sensors::read()?;
+    let weather = weather::fetch().ok();   // None if network fails
+    Ok(Reading { ... })
+}
+```
+
+`watch.rs` — runs the polling loop: calls `snapshot::take_snapshot()`, calls `db::insert()`, sleeps.
+
+`history.rs` — calls `db::query(limit)`, returns `Vec<Reading>`.
+
+### Layer 4 — `interface/`
+
+The interface layer is everything the user interacts with. It knows about the terminal but nothing about the database or HTTP.
+
+**What goes here:**
+
+`cli.rs` — the `clap` `Cli` struct and `Commands` enum. Exactly as documented in `cli-structure.md`, but now in its own file.
+
+`display.rs` — all `println!` calls, all color formatting, all table alignment. Every mode's output logic lives here as a function:
+
+```rust
+pub fn show_snapshot(reading: &Reading) { ... }
+pub fn show_peak(label: &str, temp: f32) { ... }
+pub fn show_indicator(score: &HealthScore, reading: &Reading) { ... }
+pub fn show_history(readings: &[Reading]) { ... }
+```
+
+---
+
+## The dependency rule
+
+The layers can only depend inward:
+
+```
+interface  →  app  →  infra  →  domain
+                  ↘           ↗
+                   domain ←──
+```
+
+Concretely:
+- `domain` imports nothing from your own crate
+- `infra` can import from `domain`
+- `app` can import from `domain` and `infra`
+- `interface` can import from `domain`, `infra`, and `app`
+- `main.rs` can import from all layers
+
+**What this prevents:**
+
+- `domain` should never import `rusqlite` — business rules should not depend on how you store data
+- `infra` should never import `clap` — a database function should not know what a CLI flag is
+- `app` should never call `println!` — a use case should not know what a terminal is
+
+If you find yourself wanting to break one of these rules, it usually means the code belongs in a different layer.
+
+---
+
+## The new `main.rs`
+
+After the refactor, `main.rs` becomes minimal:
+
+```rust
+mod domain;
+mod app;
+mod infra;
+mod interface;
+
+use interface::cli::{Cli, Commands};
+use clap::Parser;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        None                                => app::snapshot::run_default()?,
+        Some(Commands::Peak)                => app::snapshot::run_peak()?,
+        Some(Commands::Indicator)           => app::snapshot::run_indicator()?,
+        Some(Commands::Watch { interval })  => app::watch::run(interval)?,
+        Some(Commands::History { limit })   => app::history::run(limit)?,
+    }
+
+    Ok(())
+}
+```
+
+It declares the modules, parses the CLI, and dispatches. Nothing else.
+
+---
+
+## How to do the refactor
+
+Do this in small steps — refactor one layer at a time and compile after each step. Trying to move everything at once makes compiler errors hard to trace.
+
+**Suggested order:**
+
+1. Create `src/domain/mod.rs`, `reading.rs`, `score.rs`. Move the `Reading` struct and score formula there. Fix imports in `main.rs`.
+2. Create `src/infra/mod.rs`, `sensors.rs`, `weather.rs`, `db.rs`. Move the data-fetching code.
+3. Create `src/app/mod.rs`, `snapshot.rs`, `watch.rs`, `history.rs`. Move the use case logic.
+4. Create `src/interface/mod.rs`, `cli.rs`, `display.rs`. Move the `Cli` struct and all `println!` calls.
+5. Slim down `main.rs` to just module declarations and dispatch.
+
+After each step, run `cargo build`. Fix errors before moving to the next step. The compiler will tell you exactly which imports are missing or which items need `pub`.
+
+---
+
+## Your task
+
+Refactor the existing `src/main.rs` into the structure above. The program's behavior must not change — `cargo run`, `cargo run -- peak`, etc. should all produce identical output before and after the refactor.
+
+A refactor that does not change behavior is called a **pure refactor**. It is a good habit to keep behavior changes and structural changes in separate commits so that if something breaks, you know which change caused it.
+
+---
+
+## Checklist
+
+- [ ] Create `src/domain/mod.rs` — declare `pub mod reading; pub mod score;`
+- [ ] Create `src/domain/reading.rs` — move `Reading` struct with all `pub` fields
+- [ ] Create `src/domain/score.rs` — move `HealthScore`, `Status`, and the formula
+- [ ] Create `src/infra/mod.rs` — declare `pub mod sensors; pub mod weather; pub mod db;`
+- [ ] Create `src/infra/sensors.rs` — move `sysinfo` reading code
+- [ ] Create `src/infra/weather.rs` — move `reqwest`/`serde` weather code
+- [ ] Create `src/infra/db.rs` — move `rusqlite` code
+- [ ] Create `src/app/mod.rs` — declare `pub mod snapshot; pub mod watch; pub mod history;`
+- [ ] Create `src/app/snapshot.rs` — move snapshot logic
+- [ ] Create `src/app/watch.rs` — move watch loop
+- [ ] Create `src/app/history.rs` — move history query
+- [ ] Create `src/interface/mod.rs` — declare `pub mod cli; pub mod display;`
+- [ ] Create `src/interface/cli.rs` — move `Cli` and `Commands`
+- [ ] Create `src/interface/display.rs` — move all `println!` formatting
+- [ ] Slim `main.rs` to module declarations + dispatch only
+- [ ] Run `cargo build` — zero errors
+- [ ] Verify all modes still work correctly
+
+---
+
+## Further reading
+
+- [The Rust Book, Chapter 7 — Managing Growing Projects with Packages, Crates, and Modules](https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html)
+- [clap.md](clap.md) — the `Cli` and `Commands` types that move to `interface/cli.rs`
+- [rust_memory.md](rust_memory.md) — ownership patterns you will encounter passing `Reading` values between layers
