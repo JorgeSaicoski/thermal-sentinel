@@ -17,7 +17,8 @@ src/
 │
 ├── domain/              ← pure business logic, no external crates
 │   ├── mod.rs
-│   ├── reading.rs       ← the Reading struct (one row of data)
+│   ├── cpu_info.rs      ← CpuInfo struct (temperature + usage as one unit)
+│   ├── reading.rs       ← the Reading struct (one full row of data)
 │   └── score.rs         ← health score formula and status label
 │
 ├── app/                 ← use cases — orchestrate the other layers
@@ -137,17 +138,27 @@ This is the most important constraint. If `domain/` imports `sysinfo`, `rusqlite
 
 **What goes here:**
 
-`reading.rs` — the `Reading` struct. One reading is one row of data:
+`cpu_info.rs` — the `CpuInfo` struct. Groups temperature and usage into one named unit rather than leaving them as separate flat fields on `Reading`. This makes `Reading` easier to assemble — the app layer gets a complete `CpuInfo` from `sensors.rs` and places it whole:
+
+```rust
+pub struct CpuInfo {
+    pub temperature: f32,
+    pub usage: f32,
+}
+```
+
+`reading.rs` — the `Reading` struct. One reading is one full row of data:
 
 ```rust
 pub struct Reading {
     pub timestamp: String,
-    pub cpu_temp: f32,
-    pub cpu_usage: f32,
+    pub cpu: CpuInfo,
     pub outdoor_temp: Option<f32>,
     pub city: Option<String>,
 }
 ```
+
+Why `pub cpu: CpuInfo` and not flat `cpu_temp`/`cpu_usage` fields? Because those two values have the same origin — they come from the same infra adapter at the same moment. Grouping them reflects that. It also means `sensors.rs` can return a `CpuInfo` that carries both values together, and the caller doesn't have to unpack a tuple or remember which position is which.
 
 `score.rs` — the `HealthScore` logic. The formula and thresholds live here, not scattered across display functions:
 
@@ -175,7 +186,11 @@ The infra layer talks to the outside world: hardware, network, and disk. Each fi
 
 **What goes here:**
 
-`sensors.rs` — wraps `sysinfo`. Returns the CPU temperature and usage. Nothing in this file knows about the weather or the database.
+`sensors.rs` — wraps `sysinfo`. Imports `CpuInfo` from the domain layer and returns one. Nothing in this file knows about the weather, the database, or the full `Reading` struct.
+
+Why return `CpuInfo` and not `Reading`? Because `sensors.rs` can only fill two of `Reading`'s four fields. If it returned a `Reading`, it would have to write `outdoor_temp: None, city: None` — making a domain-level decision ("there is no weather data") from inside an infra adapter that has no business making that call. When you add `weather.rs` later, you would have two adapters each building an incomplete `Reading` and stepping on each other. The right pattern: each adapter returns what it knows, the app layer assembles the whole.
+
+`sensors.rs` is also the **only** file in the codebase that imports `sysinfo`. If you ever want to swap it for direct `hwmon` reads (see [sysinfo.md](../crates/sysinfo.md)), you change one file.
 
 `weather.rs` — wraps `reqwest` + `serde`. Fetches location and outdoor temperature. Returns a plain `(String, f32)` tuple or an error — the domain types, not raw JSON.
 
@@ -187,13 +202,19 @@ The app layer contains **use cases** — it orchestrates the other layers withou
 
 **What goes here:**
 
-`snapshot.rs` — calls `sensors` and `weather`, assembles a `Reading`, returns it.
+`snapshot.rs` — calls `sensors` and `weather`, assembles a `Reading`, returns it. This is the only place that knows about all sources and has the authority to build the complete domain object.
 
 ```rust
 pub fn take_snapshot() -> Result<Reading, Box<dyn std::error::Error>> {
-    let (cpu_temp, cpu_usage) = sensors::read()?;
+    let cpu = sensors::read()?;            // returns CpuInfo
     let weather = weather::fetch().ok();   // None if network fails
-    Ok(Reading { ... })
+
+    Ok(Reading {
+        timestamp: ...,
+        cpu,                               // CpuInfo placed whole — no unpacking
+        outdoor_temp: weather.map(|w| w.temp),
+        city: weather.map(|w| w.city),
+    })
 }
 ```
 
@@ -305,11 +326,12 @@ A refactor that does not change behavior is called a **pure refactor**. It is a 
 
 ## Checklist
 
-- [ ] Create `src/domain/mod.rs` — declare `pub mod reading; pub mod score;`
-- [ ] Create `src/domain/reading.rs` — move `Reading` struct with all `pub` fields
+- [ ] Create `src/domain/mod.rs` — declare `pub mod cpu_info; pub mod reading; pub mod score;`
+- [ ] Create `src/domain/cpu_info.rs` — `CpuInfo` struct with `temperature: f32` and `usage: f32`
+- [ ] Create `src/domain/reading.rs` — `Reading` struct with `pub cpu: CpuInfo` and all other `pub` fields
 - [ ] Create `src/domain/score.rs` — move `HealthScore`, `Status`, and the formula
 - [ ] Create `src/infra/mod.rs` — declare `pub mod sensors; pub mod weather; pub mod db;`
-- [ ] Create `src/infra/sensors.rs` — move `sysinfo` reading code
+- [ ] Create `src/infra/sensors.rs` — wraps `sysinfo`, returns `CpuInfo`
 - [ ] Create `src/infra/weather.rs` — move `reqwest`/`serde` weather code
 - [ ] Create `src/infra/db.rs` — move `rusqlite` code
 - [ ] Create `src/app/mod.rs` — declare `pub mod snapshot; pub mod watch; pub mod history;`
@@ -328,5 +350,6 @@ A refactor that does not change behavior is called a **pure refactor**. It is a 
 ## Further reading
 
 - [The Rust Book, Chapter 7 — Managing Growing Projects with Packages, Crates, and Modules](https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html)
-- [clap.md](clap.md) — the `Cli` and `Commands` types that move to `interface/cli.rs`
-- [rust_memory.md](rust_memory.md) — ownership patterns you will encounter passing `Reading` values between layers
+- [clap.md](../crates/clap.md) — the `Cli` and `Commands` types that move to `interface/cli.rs`
+- [rust_memory.md](../rust/rust_memory.md) — ownership patterns you will encounter passing `Reading` values between layers
+- [minimal-startup.md](minimal-startup.md) — a concrete walkthrough of the layers using `CpuInfo` as the example
