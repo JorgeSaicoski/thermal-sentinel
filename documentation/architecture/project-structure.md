@@ -160,25 +160,7 @@ pub struct Reading {
 
 Why `pub cpu: CpuInfo` and not flat `cpu_temp`/`cpu_usage` fields? Because those two values have the same origin — they come from the same infra adapter at the same moment. Grouping them reflects that. It also means `sensors.rs` can return a `CpuInfo` that carries both values together, and the caller doesn't have to unpack a tuple or remember which position is which.
 
-`score.rs` — the `HealthScore` logic. The formula and thresholds live here, not scattered across display functions:
-
-```rust
-pub struct HealthScore {
-    pub value: f32,         // 0.0 – 100.0
-    pub status: Status,
-    pub ambient_delta: Option<f32>,
-}
-
-pub enum Status {
-    Cool,
-    Warm,
-    Hot,
-}
-
-impl HealthScore {
-    pub fn from_reading(reading: &Reading) -> Self { ... }
-}
-```
+`score.rs` — an optional extension. If you want to compute a composite health score from the `Reading`, this is where the formula and types live — no external crates, pure domain logic. See [ideas/health-score.md](../ideas/health-score.md) for several approaches.
 
 ### Layer 2 — `infra/`
 
@@ -318,32 +300,32 @@ After each step, run `cargo build`. Fix errors before moving to the next step. T
 
 ## Your task
 
-Refactor the existing `src/main.rs` into the structure above. The program's behavior must not change — `cargo run`, `cargo run -- peak`, etc. should all produce identical output before and after the refactor.
+Build the layer structure from scratch. Start from a working `main.rs` that reads CPU data directly, then add each layer one file at a time. Compile after each new file — fix errors before moving to the next.
 
-A refactor that does not change behavior is called a **pure refactor**. It is a good habit to keep behavior changes and structural changes in separate commits so that if something breaks, you know which change caused it.
+A small change that compiles is better than a large change that doesn't. When the build breaks, you know exactly which file caused it.
 
 ---
 
 ## Checklist
 
-- [ ] Create `src/domain/mod.rs` — declare `pub mod cpu_info; pub mod reading; pub mod score;`
+- [ ] Create `src/domain/mod.rs` — declare `pub mod cpu_info; pub mod reading;`
 - [ ] Create `src/domain/cpu_info.rs` — `CpuInfo` struct with `temperature: f32` and `usage: f32`
 - [ ] Create `src/domain/reading.rs` — `Reading` struct with `pub cpu: CpuInfo` and all other `pub` fields
-- [ ] Create `src/domain/score.rs` — move `HealthScore`, `Status`, and the formula
-- [ ] Create `src/infra/mod.rs` — declare `pub mod sensors; pub mod weather; pub mod db;`
+- [ ] Create `src/infra/mod.rs` — declare `pub mod sensors;`
 - [ ] Create `src/infra/sensors.rs` — wraps `sysinfo`, returns `CpuInfo`
-- [ ] Create `src/infra/weather.rs` — move `reqwest`/`serde` weather code
-- [ ] Create `src/infra/db.rs` — move `rusqlite` code
-- [ ] Create `src/app/mod.rs` — declare `pub mod snapshot; pub mod watch; pub mod history;`
-- [ ] Create `src/app/snapshot.rs` — move snapshot logic
-- [ ] Create `src/app/watch.rs` — move watch loop
-- [ ] Create `src/app/history.rs` — move history query
-- [ ] Create `src/interface/mod.rs` — declare `pub mod cli; pub mod display;`
-- [ ] Create `src/interface/cli.rs` — move `Cli` and `Commands`
-- [ ] Create `src/interface/display.rs` — move all `println!` formatting
-- [ ] Slim `main.rs` to module declarations + dispatch only
-- [ ] Run `cargo build` — zero errors
-- [ ] Verify all modes still work correctly
+- [ ] Create `src/app/mod.rs` — declare `pub mod snapshot;`
+- [ ] Create `src/app/snapshot.rs` — calls adapters, assembles a complete `Reading`
+- [ ] Create `src/interface/mod.rs` — declare `pub mod display;`
+- [ ] Create `src/interface/display.rs` — all `println!` calls and output formatting
+- [ ] Write `src/main.rs` — declare all four modules, call `snapshot::take()` and `display::show()`
+- [ ] Run `cargo run` — prints CPU temperature and usage
+- [ ] Add `src/infra/weather.rs` — fetches city and outdoor temp from an HTTP API
+- [ ] Add `src/infra/db.rs` — opens the database, creates the schema, inserts and queries readings
+- [ ] Add `src/app/watch.rs` — polling loop: take snapshot, save to db, sleep
+- [ ] Add `src/app/history.rs` — queries the database, returns a `Vec<Reading>`
+- [ ] Add `src/interface/cli.rs` — the `Cli` struct and `Commands` enum
+- [ ] Update `src/main.rs` — parse CLI, dispatch on subcommand
+- [ ] Run `cargo run -- --help` — usage menu appears
 
 ---
 

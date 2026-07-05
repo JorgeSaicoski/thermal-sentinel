@@ -220,5 +220,5 @@ Or use [DB Browser for SQLite](https://sqlitebrowser.org) for a visual interface
 - [rusqlite docs](https://docs.rs/rusqlite/latest/rusqlite/)
 - [chrono docs](https://docs.rs/chrono/latest/chrono/)
 - [SQLite docs](https://www.sqlite.org/docs.html)
-- [rust_patterns.md](rust_patterns.md) — `Result`, `?`, and `.ok()` for graceful error handling inside loops
-- [rust_basics.md](rust_basics.md) — `loop`, `thread::sleep` for the polling pattern
+- [rust_patterns.md](../rust/rust_patterns.md) — `Result`, `?`, and `.ok()` for graceful error handling inside loops
+- [rust_basics.md](../rust/rust_basics.md) — `loop`, `thread::sleep` for the polling pattern

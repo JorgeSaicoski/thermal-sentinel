@@ -159,5 +159,5 @@ This is the shape every fetch function takes: one return type, one or two `?` op
 
 - [reqwest blocking docs](https://docs.rs/reqwest/latest/reqwest/blocking/index.html)
 - [serde docs](https://serde.rs)
-- [rust_patterns.md](rust_patterns.md) — `Result`, `?`, and `Box<dyn Error>`
-- [rust_basics.md](rust_basics.md) — structs and `#[derive]`
+- [rust_patterns.md](../rust/rust_patterns.md) — `Result`, `?`, and `Box<dyn Error>`
+- [rust_basics.md](../rust/rust_basics.md) — structs and `#[derive]`

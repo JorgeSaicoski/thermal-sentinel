@@ -157,5 +157,5 @@ Then check `cli.no_color` before printing colored output.
 ## Further reading
 
 - [clap docs — derive tutorial](https://docs.rs/clap/latest/clap/_derive/_tutorial/index.html)
-- [rust_basics.md](rust_basics.md) — enums and match, which you use to dispatch on Commands
-- [rust_patterns.md](rust_patterns.md) — `Result` and `?` in your `run_*` functions
+- [rust_basics.md](../rust/rust_basics.md) — enums and match, which you use to dispatch on Commands
+- [rust_patterns.md](../rust/rust_patterns.md) — `Result` and `?` in your `run_*` functions

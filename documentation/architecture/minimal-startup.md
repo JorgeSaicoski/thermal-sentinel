@@ -2,7 +2,9 @@
 
 This document uses one concrete example — reading CPU data and wrapping it in a domain type — to explain what each layer is for, what a contract is, and why contracts live in the domain.
 
-Read [project-structure.md](project-structure.md) first if you haven't. This document goes deeper on the *why*.
+Read [project-structure.md](project-structure.md) first if you haven't. This document goes deeper on the *why* and then shows the complete, working implementation.
+
+> **Note on approach:** This document shows the full code for every file — an intentional exception to the usual learning pattern. Normally you figure out the implementation yourself from concept explanations alone. Here, seeing the complete architecture once first helps you build a mental model of how the layers connect. The suggested use: read it all the way through, then close it and build each file from memory. The compiler will tell you what you got wrong.
 
 ---
 
@@ -42,11 +44,15 @@ Both arrows point inward. Neither layer knows about the other.
 
 ## The example: CPU data through the layers
 
-Here is how `CpuInfo` travels from hardware to output, one layer at a time.
+Here is how `CpuInfo` travels from hardware to output, one layer at a time. Each section below shows the complete file to create — no pseudocode, no gaps to fill in.
+
+---
 
 ### Domain — define the contract
 
-`CpuInfo` is a plain struct with no logic. It just names the two values that describe CPU state at a moment in time.
+The domain layer is two files: one for `CpuInfo`, one for `Reading`. They contain only struct definitions. No `use` statements, no external crates.
+
+**`src/domain/cpu_info.rs`**
 
 ```rust
 pub struct CpuInfo {
@@ -55,9 +61,13 @@ pub struct CpuInfo {
 }
 ```
 
+**`src/domain/reading.rs`**
+
 `Reading` holds a `CpuInfo` as a field rather than storing `temperature` and `usage` as separate flat values. This grouping reflects that the two values have the same origin — they come from the same adapter at the same moment.
 
 ```rust
+use crate::domain::cpu_info::CpuInfo;
+
 pub struct Reading {
     pub timestamp: String,
     pub cpu: CpuInfo,
@@ -66,7 +76,16 @@ pub struct Reading {
 }
 ```
 
-Neither struct imports anything. No `use` statements, no external crates — pure data shapes.
+**`src/domain/mod.rs`**
+
+Rust does not automatically discover files in a folder. You must declare each submodule explicitly:
+
+```rust
+pub mod cpu_info;
+pub mod reading;
+```
+
+`pub mod` makes the submodule visible to code outside `domain`. Without `pub`, nothing else can use it.
 
 ---
 
@@ -74,11 +93,26 @@ Neither struct imports anything. No `use` statements, no external crates — pur
 
 `sensors` is the only part of the program that knows how to read CPU hardware. It imports `CpuInfo` from the domain and returns one. Everything about `sysinfo` — the `Components` type, the double-refresh pattern, the `Option<f32>` temperature — is hidden inside this layer.
 
+**`src/infra/sensors.rs`**
+
 ```rust
+use std::thread;
+use sysinfo::{Component, Components, System};
 use crate::domain::cpu_info::CpuInfo;
 
 pub fn read() -> CpuInfo {
-    // ... sysinfo code here ...
+    let components = Components::new_with_refreshed_list();
+    let temperature = components
+        .iter()
+        .find_map(|c: &Component| c.temperature())
+        .unwrap_or(0.0);
+
+    let mut sys = System::new();
+    sys.refresh_cpu_usage();
+    thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+    sys.refresh_cpu_usage();
+    let usage = sys.global_cpu_usage();
+
     CpuInfo { temperature, usage }
 }
 ```
@@ -86,6 +120,12 @@ pub fn read() -> CpuInfo {
 The caller receives a `CpuInfo`. It never sees `sysinfo`. If you later replace `sysinfo` with direct kernel reads (see [sysinfo.md](../crates/sysinfo.md)), this is the only file that changes.
 
 Note the import direction: `infra` imports from `domain`. Never the other way.
+
+**`src/infra/mod.rs`**
+
+```rust
+pub mod sensors;
+```
 
 ---
 
@@ -103,33 +143,80 @@ The rule: **each adapter returns what it knows**. The app layer assembles the wh
 
 `snapshot` is the composition root. It is the only place that calls all adapters and builds a complete `Reading`. It knows about both `CpuInfo` (via the sensors call) and `Reading` (from the domain), but it knows nothing about `sysinfo` or HTTP.
 
+**`src/app/snapshot.rs`**
+
 ```rust
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::domain::reading::Reading;
 use crate::infra::sensors;
 
 pub fn take() -> Reading {
-    let cpu = sensors::read();   // CpuInfo arrives whole
+    let cpu = sensors::read();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string();
 
     Reading {
-        timestamp: ...,
-        cpu,                     // placed directly — no unpacking
-        outdoor_temp: ...,       // filled by weather adapter
-        city: ...,
+        timestamp,
+        cpu,
+        outdoor_temp: None,
+        city: None,
     }
 }
 ```
 
 `cpu` is placed into `Reading` as a unit. No field-by-field unpacking. This is one of the benefits of grouping related values into a named type — the assembly is clean.
 
+**`src/app/mod.rs`**
+
+```rust
+pub mod snapshot;
+```
+
 ---
 
 ### Interface — consume without knowing origins
 
-The display layer receives a `Reading` and formats it. It does not know whether temperature came from `sysinfo` or direct kernel reads. It does not know whether the weather fetch succeeded. It just formats what it receives.
+The display layer receives a `Reading` and formats it. It does not know whether temperature came from `sysinfo` or direct kernel reads. It just formats what it receives.
+
+**`src/interface/display.rs`**
 
 ```rust
+use crate::domain::reading::Reading;
+
 pub fn show(reading: &Reading) {
-    println!("CPU: {:.1} °C | Usage: {:.1}%", reading.cpu.temperature, reading.cpu.usage);
+    println!(
+        "[{}] CPU: {:.1} °C | Usage: {:.1}%",
+        reading.timestamp, reading.cpu.temperature, reading.cpu.usage
+    );
+}
+```
+
+**`src/interface/mod.rs`**
+
+```rust
+pub mod display;
+```
+
+---
+
+### Entry point — wire everything together
+
+`main.rs` declares all top-level modules and calls the two functions that drive the program. Nothing else happens here.
+
+**`src/main.rs`**
+
+```rust
+mod app;
+mod domain;
+mod infra;
+mod interface;
+
+fn main() {
+    let reading = app::snapshot::take();
+    interface::display::show(&reading);
 }
 ```
 
@@ -140,24 +227,67 @@ pub fn show(reading: &Reading) {
 ```
 hardware
   ↓
-infra::sensors::read()   →  produces  CpuInfo
-                                         ↓
-                          app::snapshot::take()   →  produces  Reading
-                                                                  ↓
-                                               interface::display::show()
+infra::sensors::read()        →  produces  CpuInfo
+                                               ↓
+                    app::snapshot::take()   →  produces  Reading
+                                                            ↓
+                                   interface::display::show()
 ```
 
 At every boundary, the only thing that crosses is a domain type. No layer leaks its internals to the next.
 
 ---
 
-## What to figure out
+## Running it
 
-The examples above show the *shape* of each piece in isolation. Your exercise is to discover how they connect:
+Once all files are in place:
 
-- How does Rust know that `CpuInfo` in `infra/sensors.rs` is the same `CpuInfo` defined in `domain/cpu_info.rs`? (Hint: `use crate::...`)
-- How do you make `CpuInfo` visible to other modules? (Hint: `pub`)
-- How does each module get registered so Rust knows it exists? (Hint: `mod.rs` and `pub mod`)
-- How does `reading.rs` import `CpuInfo` if they're in the same layer?
+```bash
+cargo run
+```
 
-Read [project-structure.md](project-structure.md) for the module system mechanics, and [rust_memory.md](../rust/rust_memory.md) for why structs are passed by value or by reference depending on context.
+Expected output:
+
+```
+[1720123456] CPU: 42.0 °C | Usage: 8.3%
+```
+
+The timestamp is Unix epoch seconds — a plain integer, no external crate needed. The temperature and usage come from the hardware sensors on your machine.
+
+---
+
+## Applying the pattern to new features
+
+Every new data source follows the same four steps. No existing file changes except the ones that directly own the new concern.
+
+**Step 1 — Domain**: what struct holds this data? Add it in `domain/` and declare it in `domain/mod.rs`.
+
+**Step 2 — Infra**: what external system provides it? Write an adapter in `infra/` that imports the domain struct and returns it. Add it to `infra/mod.rs`.
+
+**Step 3 — App**: where does it get assembled? In `app/snapshot.rs` — call the new adapter and fill in its fields on `Reading`.
+
+**Step 4 — Interface**: how does the user see it? In `interface/display.rs` — read the new field from `Reading` and format it.
+
+### Example: outdoor temperature via HTTP
+
+- `domain/` — `Reading` already has `outdoor_temp: Option<f32>` and `city: Option<String>`
+- `infra/weather.rs` — fetches from an API, returns a struct with city and temperature; add `pub mod weather;` to `infra/mod.rs`
+- `app/snapshot.rs` — call `weather::fetch()`, fill in the two fields
+- `interface/display.rs` — add outdoor temp to the output line
+
+### Example: a terminal UI with a crate like `ratatui`
+
+The pattern is the same. `ratatui` belongs in `interface/` — it is a display concern. The data it renders comes from a `Reading` passed in as a reference. The rest of the architecture does not change.
+
+- `interface/tui.rs` — draws the terminal UI using a `&Reading`; add `pub mod tui;` to `interface/mod.rs`
+- `main.rs` — call `interface::tui::show(&reading)` instead of (or alongside) `display::show`
+
+The architectural rule: `interface/` is the only layer that knows about visual output. `app/` and `infra/` stay unaware of how data is presented.
+
+---
+
+## Further reading
+
+- [project-structure.md](project-structure.md) — the full target structure across all five modes
+- [sysinfo.md](../crates/sysinfo.md) — details on the double-refresh pattern and direct kernel reads
+- [rust_memory.md](../rust/rust_memory.md) — why `show` takes `&Reading` instead of `Reading`
