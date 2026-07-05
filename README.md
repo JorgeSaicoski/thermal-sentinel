@@ -1,10 +1,10 @@
 # thermal-sentinel
 
-A CPU temperature monitor — and a project for learning Rust.
+A system monitoring tool — and a project for learning Rust.
 
 ## What this is
 
-This project has two purposes: build a working Linux CLI tool, and learn Rust by building it.
+This project has two purposes: build a Linux CLI tool that monitors your machine, and learn Rust by building it.
 
 An AI agent writes the documentation. You read the docs and write the code. The gap between a finished doc and working code is intentional — that gap is the exercise.
 
@@ -15,13 +15,9 @@ src/             ← You write here (the actual Rust)
 
 ## What you're building
 
-A Linux CLI tool that:
+The first feature — reading CPU temperature through a four-layer architecture — is documented in full. What you add after that is yours to decide.
 
-- Reads CPU temperature from hardware sensors
-- Polls at a configurable interval and logs readings to a database
-- Fetches outdoor temperature from a public weather API
-- Stores everything in SQLite
-- Shows a composite health score comparing CPU and ambient conditions
+Some directions: log readings over time, fetch data from an external API, add CLI subcommands, compare values across days or conditions. The documentation gives you the tools; you design the application.
 
 ## Prerequisites
 
@@ -43,6 +39,4 @@ cargo run
 
 ## How to follow along
 
-Read [`documentation/README.md`](documentation/README.md) — it lays out the six steps in order, tells you which doc to read at each step, and describes what to build after reading it.
-
-Start with `documentation/README.md`, not with the source code.
+Read [`documentation/README.md`](documentation/README.md). It walks you through the language basics, the architecture, and the first implementation — then hands the project over to you.

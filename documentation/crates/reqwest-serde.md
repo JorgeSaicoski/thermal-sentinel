@@ -161,3 +161,4 @@ This is the shape every fetch function takes: one return type, one or two `?` op
 - [serde docs](https://serde.rs)
 - [rust_patterns.md](../rust/rust_patterns.md) — `Result`, `?`, and `Box<dyn Error>`
 - [rust_basics.md](../rust/rust_basics.md) — structs and `#[derive]`
+- [ideas/data-sources.md](../ideas/data-sources.md) — APIs and data sources you could fetch

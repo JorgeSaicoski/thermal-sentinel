@@ -90,7 +90,7 @@ let epoch_secs = SystemTime::now()
     .as_secs();
 ```
 
-Add `chrono` for human-readable formats and day-of-week access:
+Add `chrono` to `Cargo.toml` first (`chrono = "0.4"`), then use it for human-readable formats and day-of-week access:
 
 ```rust
 use chrono::Local;

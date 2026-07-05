@@ -80,6 +80,8 @@ Bad documentation for this project:
 - Solves the problem for them
 - Uses the word "refactor"
 
+**Exception:** `documentation/architecture/minimal-startup.md` shows complete file contents intentionally — as a one-time visualization of the full architecture before the human builds it themselves. This is the only document where showing complete code is acceptable.
+
 ---
 
 ## What you do when asked a design question

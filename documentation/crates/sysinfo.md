@@ -181,3 +181,4 @@ cat /sys/class/hwmon/hwmon0/temp1_input
 - [sysinfo docs](https://docs.rs/sysinfo/latest/sysinfo/)
 - [rust_patterns.md](../rust/rust_patterns.md) — `Option` handling for `.temperature()`
 - [rust_basics.md](../rust/rust_basics.md) — `for` loops, `if let`, `mut`
+- [ideas/what-to-measure.md](../ideas/what-to-measure.md) — what else sysinfo exposes beyond CPU temperature

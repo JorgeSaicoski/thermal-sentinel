@@ -380,6 +380,24 @@ thread::sleep(Duration::from_millis(500));
 
 `Duration` keeps units explicit — you cannot pass seconds where milliseconds are expected.
 
+### The polling loop
+
+Combining `loop` and `thread::sleep` gives the skeleton of any monitor or watcher:
+
+```rust
+use std::thread;
+use std::time::Duration;
+
+loop {
+    let reading = take_reading();    // do work
+    display(reading);                // show or save
+
+    thread::sleep(Duration::from_secs(30));  // wait, then repeat
+}
+```
+
+The sleep goes at the end — so the first reading appears immediately on startup. The loop runs until the user presses `Ctrl+C`.
+
 ---
 
 ## `RUST_BACKTRACE=1`

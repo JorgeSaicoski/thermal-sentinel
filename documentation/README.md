@@ -109,6 +109,7 @@ Not sure what to build next? These docs are starting points, not instructions.
 |---|---|
 | [ideas/what-to-measure.md](ideas/what-to-measure.md) | What `sysinfo` can give you beyond CPU temperature |
 | [ideas/data-sources.md](ideas/data-sources.md) | What external data you could fetch with `reqwest` |
+| [ideas/cli-modes.md](ideas/cli-modes.md) | Subcommands and arguments you could add (`live`, `save_current`, `analysis`) |
 | [ideas/health-score.md](ideas/health-score.md) | Four approaches to a composite health score |
 
 ---
@@ -128,4 +129,5 @@ Not sure what to build next? These docs are starting points, not instructions.
 | [crates/rusqlite.md](crates/rusqlite.md) | SQLite database and timestamps |
 | [ideas/what-to-measure.md](ideas/what-to-measure.md) | What sysinfo can give you |
 | [ideas/data-sources.md](ideas/data-sources.md) | What external APIs you could use |
+| [ideas/cli-modes.md](ideas/cli-modes.md) | Subcommands and arguments you could add |
 | [ideas/health-score.md](ideas/health-score.md) | Composite health score design approaches |
