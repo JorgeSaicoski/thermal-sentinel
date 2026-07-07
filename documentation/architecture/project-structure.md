@@ -250,9 +250,9 @@ If you find yourself wanting to break one of these rules, it usually means the c
 
 ---
 
-## The new `main.rs`
+## What `main.rs` looks like when the layers are in place
 
-After the refactor, `main.rs` becomes minimal:
+Once all four layers exist, `main.rs` becomes minimal:
 
 ```rust
 mod domain;
@@ -282,16 +282,16 @@ It declares the modules, parses the CLI, and dispatches. Nothing else.
 
 ---
 
-## How to do the refactor
+## How to build the layers
 
-Do this in small steps — refactor one layer at a time and compile after each step. Trying to move everything at once makes compiler errors hard to trace.
+Do this in small steps — add one layer at a time and compile after each step. Trying to create everything at once makes compiler errors hard to trace.
 
 **Suggested order:**
 
-1. Create `src/domain/mod.rs`, `reading.rs`, `score.rs`. Move the `Reading` struct and score formula there. Fix imports in `main.rs`.
-2. Create `src/infra/mod.rs`, `sensors.rs`, `weather.rs`, `db.rs`. Move the data-fetching code.
-3. Create `src/app/mod.rs`, `snapshot.rs`, `watch.rs`, `history.rs`. Move the use case logic.
-4. Create `src/interface/mod.rs`, `cli.rs`, `display.rs`. Move the `Cli` struct and all `println!` calls.
+1. Create `src/domain/mod.rs`, `reading.rs`, `score.rs`. Declare the domain types. Fix imports in `main.rs`.
+2. Create `src/infra/mod.rs`, `sensors.rs`, `weather.rs`, `db.rs`. Add the data-fetching adapters.
+3. Create `src/app/mod.rs`, `snapshot.rs`, `watch.rs`, `history.rs`. Add the use case logic.
+4. Create `src/interface/mod.rs`, `cli.rs`, `display.rs`. Add the `Cli` struct and all `println!` calls.
 5. Slim down `main.rs` to just module declarations and dispatch.
 
 After each step, run `cargo build`. Fix errors before moving to the next step. The compiler will tell you exactly which imports are missing or which items need `pub`.

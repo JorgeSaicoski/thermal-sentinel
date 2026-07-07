@@ -55,8 +55,8 @@ The domain layer is two files: one for `CpuInfo`, one for `Reading`. They contai
 **`src/domain/cpu_info.rs`**
 
 ```rust
-pub struct CpuInfo {
-    pub temperature: f32,
+pub struct CpuInfo {   // pub struct — visible to other modules; without pub, only domain/ could use it
+    pub temperature: f32, // pub field — other modules can read this value; f32 is a 32-bit floating point number
     pub usage: f32,
 }
 ```
@@ -66,13 +66,13 @@ pub struct CpuInfo {
 `Reading` holds a `CpuInfo` as a field rather than storing `temperature` and `usage` as separate flat values. This grouping reflects that the two values have the same origin — they come from the same adapter at the same moment.
 
 ```rust
-use crate::domain::cpu_info::CpuInfo;
+use crate::domain::cpu_info::CpuInfo; // crate:: means "start from the root of this project" — it's how Rust navigates your own modules
 
 pub struct Reading {
     pub timestamp: String,
     pub cpu: CpuInfo,
-    pub outdoor_temp: Option<f32>,
-    pub city: Option<String>,
+    pub outdoor_temp: Option<f32>,  // Option means this value may or may not exist — None if unknown, Some(42.0) if present
+    pub city: Option<String>,       // same pattern — city is optional until a weather adapter fills it in
 }
 ```
 
@@ -101,23 +101,26 @@ use sysinfo::{Component, Components, System};
 use crate::domain::cpu_info::CpuInfo;
 
 pub fn read() -> CpuInfo {
-    let components = Components::new_with_refreshed_list();
+    let components = Components::new_with_refreshed_list(); // ask sysinfo for all hardware sensors on the machine
+
     let temperature = components
-        .iter()
-        .find_map(|c: &Component| c.temperature())
-        .unwrap_or(0.0);
+        .iter()                                    // walk through each sensor one at a time
+        .find_map(|c: &Component| c.temperature()) // for each sensor, try to get its temperature — stop at the first one that has one
+        .unwrap_or(0.0);                           // .temperature() returns Option<f32>; if every sensor returned None, fall back to 0.0
 
     let mut sys = System::new();
-    sys.refresh_cpu_usage();
-    thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-    sys.refresh_cpu_usage();
-    let usage = sys.global_cpu_usage();
+    sys.refresh_cpu_usage();                               // first snapshot — on its own this number is meaningless
+    thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);   // wait the minimum time sysinfo requires between reads
+    sys.refresh_cpu_usage();                               // second snapshot — sysinfo computes usage as the delta between the two
+    let usage = sys.global_cpu_usage(); // now the percentage is valid — this is a single average across all cores
 
-    CpuInfo { temperature, usage }
+    CpuInfo { temperature, usage } // shorthand: when a variable name matches a field name, Rust lets you write it once
 }
 ```
 
 The caller receives a `CpuInfo`. It never sees `sysinfo`. If you later replace `sysinfo` with direct kernel reads (see [sysinfo.md](../crates/sysinfo.md)), this is the only file that changes.
+
+> **One value by design:** `global_cpu_usage()` returns a single average across all cores — not per-core data. This is intentional for the minimal: one number is enough to see the full architecture work. When you're ready to go further, `sys.cpus()` returns a list of individual cores you can iterate over.
 
 Note the import direction: `infra` imports from `domain`. Never the other way.
 
@@ -152,16 +155,17 @@ use crate::infra::sensors;
 
 pub fn take() -> Reading {
     let cpu = sensors::read();
+
     let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-        .to_string();
+        .duration_since(UNIX_EPOCH) // seconds elapsed since Jan 1 1970 — the standard Unix timestamp
+        .unwrap_or_default()        // duration_since returns Result, not Option; .unwrap_or_default() means "use zero if this somehow fails"
+        .as_secs()                  // convert the Duration value into a plain u64 (whole seconds)
+        .to_string();               // turn the number into a String so Reading.timestamp can hold it
 
     Reading {
         timestamp,
         cpu,
-        outdoor_temp: None,
+        outdoor_temp: None, // no weather adapter yet — None signals "this field has no value"
         city: None,
     }
 }
@@ -186,9 +190,10 @@ The display layer receives a `Reading` and formats it. It does not know whether 
 ```rust
 use crate::domain::reading::Reading;
 
-pub fn show(reading: &Reading) {
+pub fn show(reading: &Reading) { // & means we borrow Reading — we can read its fields but we don't take ownership of it
     println!(
         "[{}] CPU: {:.1} °C | Usage: {:.1}%",
+        //           ^^^^ format specifier: print this f32 with exactly 1 decimal place
         reading.timestamp, reading.cpu.temperature, reading.cpu.usage
     );
 }
@@ -209,14 +214,14 @@ pub mod display;
 **`src/main.rs`**
 
 ```rust
-mod app;
+mod app;      // mod (no pub) — declares the module for use inside main.rs only; contrast with pub mod inside mod.rs files
 mod domain;
 mod infra;
 mod interface;
 
 fn main() {
     let reading = app::snapshot::take();
-    interface::display::show(&reading);
+    interface::display::show(&reading); // & passes a reference — show reads but doesn't consume reading
 }
 ```
 
@@ -252,7 +257,22 @@ Expected output:
 [1720123456] CPU: 42.0 °C | Usage: 8.3%
 ```
 
-The timestamp is Unix epoch seconds — a plain integer, no external crate needed. The temperature and usage come from the hardware sensors on your machine.
+Your numbers will be different — they come from your machine's hardware at the moment you run it. Here is what each part means:
+
+```
+[1720123456]   CPU: 42.0 °C   |   Usage: 8.3%
+ ───────────        ────             ────
+     │                │                └─ percentage of CPU capacity in use right now
+     │                └─ temperature of the first sensor that reported a value, in Celsius
+     └─ Unix timestamp — seconds elapsed since January 1, 1970
+        (paste it into https://www.unixtimestamp.com to see the human-readable date)
+```
+
+A few things worth knowing about these values:
+
+- **42.0 °C** is a normal idle temperature for a CPU. Under load, it might climb to 70–90 °C. Above 95 °C the hardware starts throttling itself. This is what we are eventually monitoring.
+- **8.3%** means the CPU spent about 8% of its time doing work during the measurement window. The double-refresh in `sensors.rs` is what makes this number meaningful — one snapshot alone cannot compute a rate.
+- **The timestamp** is a raw integer here. In a later step you will switch to a human-readable format using the `chrono` crate.
 
 ---
 

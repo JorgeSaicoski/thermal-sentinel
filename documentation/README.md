@@ -18,7 +18,7 @@ Read these three documents before writing any code. They are reference material 
 | [rust/rust_memory.md](rust/rust_memory.md) | Stack vs heap, ownership, borrowing — the concept that makes Rust different from every other language |
 | [rust/rust_patterns.md](rust/rust_patterns.md) | `Option`, `Result`, the `?` operator, iterators — how Rust handles missing values and failures |
 
-**After reading:** Run `cargo run` in the project root. Understand every line of `src/main.rs`. If something is unclear, find it in the docs above.
+**After reading:** Run `cargo run` to see the starter program run. Then open `src/main.rs` and read it line by line — it should be short. If any line is unclear, find the concept in the docs above before moving on.
 
 ---
 

@@ -265,6 +265,21 @@ let first_big = numbers.iter().find(|&&x| x > 15);
 // Some(20)
 ```
 
+### `.find_map()` — find the first element that produces `Some`
+
+Like `.find()`, but the closure returns `Option` instead of `bool`. Stops at the first `Some` and returns it; skips `None`.
+
+```rust
+let sensors = vec!["Core 0", "Package id 0", "acpitz"];
+
+let found = sensors.iter().find_map(|&name| {
+    if name.starts_with("Core") { Some(name) } else { None }
+});
+// Some("Core 0")
+```
+
+This is useful when you want the first element that has a value — the sensor code uses it to get the first temperature reading that exists, skipping sensors that returned `None`.
+
 ### `.enumerate()` — element with its index
 
 ```rust
