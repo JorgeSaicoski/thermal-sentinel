@@ -5,5 +5,7 @@ mod interface;
 
 fn main() {
     let reading = app::snapshot::take();
-    interface::display::show(&reading);
+    interface::display::display_reading(reading);
+    let readings = app::snapshot::take_all();
+    interface::display::display_readings(readings);
 }
