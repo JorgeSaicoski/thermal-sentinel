@@ -205,6 +205,48 @@ println!("{} {}", a, b);   // both valid
 
 ---
 
+## `&str` vs `String` — borrowed vs owned strings
+
+Rust has two string types and they are not interchangeable.
+
+| Type | What it is | Lives on |
+|---|---|---|
+| `String` | An owned, growable string | Heap |
+| `&str` | A borrowed view into a string | Anywhere |
+
+**`String`** — you own it. You can modify it, store it in a struct, and pass it to other functions.
+
+**`&str`** — you are borrowing a view of someone else's string. You cannot store it in a struct that outlives the borrow.
+
+Many library methods return `&str` — a temporary view of internal data. If you need to keep that value, you must convert it to an owned `String`:
+
+```rust
+// .label() returns &str — a borrowed view
+let borrowed: &str = component.label();
+
+// to store it, convert to owned String
+let owned: String = component.label().to_string();
+```
+
+Two equivalent ways to convert:
+
+```rust
+let s = some_str.to_string();        // method on &str
+let s = String::from(some_str);      // associated function on String
+```
+
+The compiler tells you when you have this wrong:
+
+```
+error[E0308]: mismatched types
+  expected `String`, found `&str`
+help: try using a conversion method: `label.to_string()`
+```
+
+When you see `expected String, found &str` — add `.to_string()` at the point where you use the value.
+
+---
+
 ## Good practices
 
 **Prefer `&str` over `&String` in function parameters** — `&str` accepts string literals, `String` references, and anything string-like. `&String` only accepts `String`.

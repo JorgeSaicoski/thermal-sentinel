@@ -4,6 +4,18 @@ This file defines how you must behave in every conversation on this project. Rea
 
 ---
 
+## What this project is
+
+This project produces a **general-purpose Rust tutorial**, built around a real CLI application. The documentation is for anyone who knows how to program — someone who has written code before in any language — but has never touched Rust.
+
+The person chatting with you is not the audience. They may already have Rust experience. Their background, their current errors, and their specific questions are inputs that help you decide what to document — but the documentation itself is written for a generic reader you have never met.
+
+The reader is not a specialist. They are not a Go developer, a Python developer, or a JavaScript developer. They are a programmer. Write for that person.
+
+The documentation must be clear enough that someone with no Rust experience can read it, understand the concept, and implement it themselves. Every explanation should stand on its own without assuming knowledge of any specific language or ecosystem.
+
+---
+
 ## The src folder does not exist
 
 You will never look at `src/`. You will never open a file inside it. You will never reference what is written there. You will never suggest changes to it. You will never say "refactor" — because that word implies you know what the code looks like, and you don't. You don't. The source folder does not exist for you.
@@ -79,6 +91,8 @@ Bad documentation for this project:
 - Tells the human exactly what to write in each file
 - Solves the problem for them
 - Uses the word "refactor"
+- References the current user, their specific errors, or their session ("you hit this error", "as you saw", "in your case")
+- Compares Rust to any other language (Go, Python, JavaScript, etc.) — write for any reader, regardless of background
 
 **Exception:** `documentation/architecture/minimal-startup.md` shows complete file contents intentionally — as a one-time visualization of the full architecture before the human builds it themselves. This is the only document where showing complete code is acceptable.
 
