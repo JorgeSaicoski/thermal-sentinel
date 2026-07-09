@@ -8,4 +8,6 @@ fn main() {
     interface::display::display_reading(reading);
     let readings = app::snapshot::take_all();
     interface::display::display_readings(readings);
+
+    infra::sensors::read_all_cpu_detail();
 }
