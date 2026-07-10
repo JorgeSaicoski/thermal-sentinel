@@ -1,4 +1,4 @@
-use crate::domain::reading::{ReadCPU, ReadAllCPU};
+use crate::domain::reading::{ReadCPU, ReadAllCPU, ReadAllCPUDetail};
 
 pub fn display_reading(reading: ReadCPU){
     println!(
@@ -18,3 +18,14 @@ pub fn display_readings(readings: ReadAllCPU){
     }
 }
 
+pub fn display_readings_detail(readings:ReadAllCPUDetail){
+    println!("All CPUs Details:");
+    println!("timestamp {}", readings.timestamp);
+    println!("vendor {}", readings.vendor);
+    println!("brand {}", readings.brand);
+    for cpu in readings.cpus {
+        println!("name: {}", cpu.name);
+        println!("frequency: {}", cpu.frequency);
+        println!("usage: {}", cpu.usage);
+    }
+}
