@@ -306,6 +306,110 @@ The architectural rule: `interface/` is the only layer that knows about visual o
 
 ---
 
+## When the architecture needs state
+
+The minimal above creates `Components` and `System` from scratch on every call to `sensors::read()`. That is fine for a single snapshot. But when you read in a loop — every 30 seconds, every minute — recreating those objects every tick is wasteful. The OS reconnects, allocates memory, and scans hardware from the beginning each time.
+
+The fix is to hold `Components` and `System` inside a struct so they survive across calls. Only the refresh — not the creation — happens on each tick.
+
+This is a change to one layer only: `infra/sensors.rs`. The domain, app, and interface layers do not change. Contracts stay the same.
+
+**`src/infra/sensors.rs` — evolved**
+
+```rust
+use std::thread;
+use sysinfo::{Component, Components, System};
+use crate::domain::cpu_info::CpuInfo;
+
+pub struct SensorReader {       // holds hardware handles that persist across calls
+    components: Components,     // not pub — the caller never needs to touch this directly
+    sys: System,
+}
+
+impl SensorReader {
+    pub fn new() -> SensorReader {
+        let mut sys = System::new();
+        sys.refresh_cpu_usage(); // first snapshot — take it now so the second one in read() has something to diff against
+
+        SensorReader {
+            components: Components::new_with_refreshed_list(),
+            sys,
+        }
+    }
+
+    pub fn read(&mut self) -> CpuInfo { // &mut self — refresh modifies internal state, so Rust requires mut
+        self.components.refresh(true);
+
+        let temperature = self.components
+            .iter()
+            .find_map(|c: &Component| c.temperature())
+            .unwrap_or(0.0);
+
+        thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        self.sys.refresh_cpu_usage(); // second snapshot — diff happens internally in sysinfo
+        let usage = self.sys.global_cpu_usage();
+
+        CpuInfo { temperature, usage }
+    }
+}
+```
+
+`SensorReader::new()` creates and initializes. `SensorReader::read()` refreshes and returns. The caller never sees `Components` or `System` — they are private to `infra`.
+
+**`src/app/snapshot.rs` — receives the reader as an argument**
+
+```rust
+use std::time::{SystemTime, UNIX_EPOCH};
+use crate::domain::reading::Reading;
+use crate::infra::sensors::SensorReader;
+
+pub fn take(reader: &mut SensorReader) -> Reading { // borrows the reader — does not take ownership
+    let cpu = reader.read();
+
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+        .to_string();
+
+    Reading {
+        timestamp,
+        cpu,
+        outdoor_temp: None,
+        city: None,
+    }
+}
+```
+
+`app` receives `&mut SensorReader` from `main`. It does not create or own it — that is `main`'s job. This keeps the lifecycle clear: one object, created once, passed around.
+
+**`src/main.rs` — creates the reader once, loops**
+
+```rust
+use std::time::Duration;
+
+mod app;
+mod domain;
+mod infra;
+mod interface;
+
+fn main() {
+    let mut reader = infra::sensors::SensorReader::new(); // created once — not recreated each tick
+
+    loop {
+        let reading = app::snapshot::take(&mut reader);
+        interface::display::show(&reading);
+        std::thread::sleep(Duration::from_secs(30));
+    }
+}
+```
+
+`main` owns the `SensorReader`. On each tick it passes a mutable reference to `app::snapshot::take`, which passes it down to `infra`. The struct is never recreated — only refreshed.
+
+The flow is the same as the minimal. Only `main` grows a loop and `SensorReader` replaces the standalone `read()` function.
+
+---
+
 ## Further reading
 
 - [project-structure.md](project-structure.md) — the full target structure across all five modes

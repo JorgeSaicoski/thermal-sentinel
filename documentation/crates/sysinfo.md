@@ -113,6 +113,81 @@ for component in &components {
 
 ---
 
+## Reusing state across multiple readings
+
+When you read sensors once and stop, creating `Components` or `System` on each call is fine. But when you read in a loop — every 30 seconds, every minute — recreating those objects every tick is wasteful. Each creation reconnects to the OS, allocates memory, and does a full scan from scratch.
+
+The right pattern: **create once, refresh each tick.**
+
+`sysinfo` supports this directly. Every object that can be created can also be refreshed:
+
+```rust
+// create once — expensive, do this outside the loop
+let mut components = Components::new_with_refreshed_list();
+
+// each tick — cheap, just updates the values
+components.refresh(true);
+
+// now read from components as normal
+for component in &components {
+    if let Some(temp) = component.temperature() {
+        println!("{}: {:.1} °C", component.label(), temp);
+    }
+}
+```
+
+`refresh(true)` updates each sensor's value in place. The `true` argument tells `sysinfo` to also check for new sensors that may have appeared — pass `false` if you only want to update known sensors.
+
+The same applies to `System`:
+
+```rust
+// create once
+let mut sys = System::new_with_specifics(
+    RefreshKind::nothing().with_cpu(CpuRefreshKind::everything()),
+);
+
+// each tick
+std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+sys.refresh_cpu_all();
+
+// read as normal
+for cpu in sys.cpus() {
+    println!("{}: {:.1}%", cpu.name(), cpu.cpu_usage());
+}
+```
+
+### Wrapping in a struct
+
+When you need to carry this state through your application, put it in a struct with a `new()` constructor. This keeps initialization separate from reading:
+
+```rust
+struct SensorReader {
+    components: Components,
+}
+
+impl SensorReader {
+    fn new() -> SensorReader {
+        SensorReader {
+            components: Components::new_with_refreshed_list(),
+        }
+    }
+
+    fn read(&mut self) -> Vec<(String, f32)> {
+        self.components.refresh(true);
+        self.components
+            .iter()
+            .filter_map(|c| c.temperature().map(|t| (c.label().to_string(), t)))
+            .collect()
+    }
+}
+```
+
+The caller creates `SensorReader::new()` once, then calls `.read()` on each tick. The `Components` object lives inside the struct and is never recreated.
+
+Notice `&mut self` on `read()` — refreshing updates the struct's internal state, so Rust requires it to be mutable. See [rust_basics.md](../rust/rust_basics.md) for the distinction between `&self` and `&mut self`.
+
+---
+
 ## Reading directly from the kernel (no crate)
 
 `sysinfo` reads from Linux's `hwmon` subsystem under the hood. You can do it directly using only the standard library — useful for understanding what is happening, or for zero-dependency builds.
