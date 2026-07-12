@@ -11,10 +11,10 @@ pub fn display_readings(readings: ReadAllCPU){
     println!("All CPUs:");
     println!("timestamp: {}", readings.timestamp);
     for cpu in &readings.cpus {
-        println!(
-            "[{}] Temp: {:.1} °C",
+        print!(
+            "[{}] Temp: {:.1} °C ||",
             cpu.label, cpu.temperature
-        )
+        );
     }
 }
 
@@ -24,8 +24,8 @@ pub fn display_readings_detail(readings:ReadAllCPUDetail){
     println!("vendor {}", readings.vendor);
     println!("brand {}", readings.brand);
     for cpu in readings.cpus {
-        println!("name: {}", cpu.name);
-        println!("frequency: {}", cpu.frequency);
-        println!("usage: {}", cpu.usage);
+        print!("name: {}", cpu.name);
+        print!(" frequency: {}", cpu.frequency);
+        println!(" usage: {}", cpu.usage);
     }
 }

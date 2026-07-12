@@ -24,15 +24,21 @@ fn main()  {
             }
 
         }
-        Some(Commands::Detail { limit: _, interval: _ }) => {
+        Some(Commands::Detail { interval }) => {
             let mut reader = infra::sensors::SensorReader::new();
-            let reading = app::snapshot::take_all_detail(&mut reader);
-            interface::display::display_readings_detail(reading)
+            loop {
+                let reading = app::snapshot::take_all_detail(&mut reader);
+                interface::display::display_readings_detail(reading);
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+            }
         }
-        Some(Commands::Info { limit: _, interval: _ }) => {
+        Some(Commands::Info { interval }) => {
             let mut reader = infra::sensors::SensorReader::new();
-            let reading = app::snapshot::take_all(&mut reader);
-            interface::display::display_readings(reading)
+            loop {
+                let reading = app::snapshot::take_all(&mut reader);
+                interface::display::display_readings(reading);
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+            }
         }
         Some(Commands::Snapshot) => {
             let mut reader = infra::sensors::SensorReader::new();
