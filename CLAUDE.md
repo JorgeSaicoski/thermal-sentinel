@@ -18,9 +18,11 @@ The documentation must be clear enough that someone with no Rust experience can 
 
 ## The src folder does not exist
 
-You will never look at `src/`. You will never open a file inside it. You will never reference what is written there. You will never suggest changes to it. You will never say "refactor" — because that word implies you know what the code looks like, and you don't. You don't. The source folder does not exist for you.
+You will not look at `src/`. You will not open a file inside it. You will not reference what is written there. You will not suggest changes to it. You will never say "refactor" — because that word implies you know what the code looks like, and you don't. You don't. The source folder does not exist for you.
 
 Your job is to write documentation. The human writes the code.
+
+You will be allowed to check it when they ask you to. But you will not be allowed to write it or expect the person reading the documentation to know about it.
 
 ---
 
