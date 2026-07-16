@@ -32,6 +32,15 @@ impl SensorReader {
         readings
     }
 
+    pub fn global_usage(&self) -> f32 {
+        let mut sys = System::new_with_specifics(
+            RefreshKind::nothing().with_cpu(CpuRefreshKind::everything()),
+        );
+        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        sys.refresh_cpu_all();
+        sys.global_cpu_usage()
+    }
+
     fn read_cpu_temperature(&self) -> f32 {
         self.components
             .iter()

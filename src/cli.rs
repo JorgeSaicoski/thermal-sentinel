@@ -22,6 +22,10 @@ pub enum Commands {
         #[arg(short, long, default_value_t = 10)]
         interval: u64,
     },
+    Score{
+        #[arg(short, long, default_value_t = 10)]
+        interval: u64,
+    },
     Snapshot,
 
 }
