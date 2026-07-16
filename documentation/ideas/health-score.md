@@ -42,7 +42,7 @@ The score function needs three pieces of data:
 
 - **Hottest sensor temperature** — found by a helper method on `CpuInfo`; the sensor API returns individual readings, not a max
 - **Average CPU usage** — `sysinfo` provides `global_cpu_usage()` directly as a single `f32`; no averaging needed
-- **External temperature** — entered by the user interactively; cached in the app layer
+- **External temperature** — entered by the user interactively; cached in `main.rs` alongside the loop
 
 None of these come from inside `domain/`. The score function receives them already computed — it does not fetch, prompt, or search.
 
@@ -82,16 +82,16 @@ Three plain numbers in, one number out. The score function does not know how tho
 
 ---
 
-## The external temperature — app layer concern
+## The external temperature — main.rs concern
 
 The external temperature is not a CLI argument. The user enters it interactively, and it is cached so they are not asked on every loop iteration.
 
-This caching logic belongs in the `app/` layer — not in `domain/score.rs`. The score function does not know where the temperature came from.
+This caching logic lives in `main.rs` alongside the loop — consistent with how other commands handle their loops. The score function does not know where the temperature came from.
 
 A counter approach works well: track how many iterations have passed, and when `interval * count >= 3600`, ask the user again and reset the counter.
 
 ```rust
-// conceptual pattern in app/watch.rs
+// conceptual pattern in main.rs
 
 let mut external_temp: f32 = ask_user_for_temp();
 let mut count: u64 = 0;
@@ -111,7 +111,7 @@ loop {
 }
 ```
 
-`ask_user_for_temp()` belongs in `interface/` — it reads from stdin and returns an `f32`. The app layer calls it; the domain layer never sees it.
+`ask_user_for_temp()` belongs in `interface/` — it reads from stdin and returns an `f32`. `main.rs` calls it; the domain layer never sees it.
 
 ---
 
@@ -120,7 +120,8 @@ loop {
 | Piece | Location |
 |---|---|
 | Formula | `domain/score.rs` |
-| Loop, counter, cached temperature | `app/watch.rs` |
+| `hottest()` helper | `domain/cpu_info.rs` |
+| Loop, counter, cached temperature | `main.rs` |
 | Interactive temperature prompt | `interface/` |
 | Score display | `interface/display.rs` |
 
