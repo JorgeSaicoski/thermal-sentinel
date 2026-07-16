@@ -1,123 +1,133 @@
-# Health Score — Ideas
+# Health Score
 
-The health score is an optional extension: a single number or label that tells you at a glance whether your CPU is running well. This document offers several approaches — not to prescribe one, but to give you a starting point and something to think through.
+The health score answers a single question: *is this CPU running hotter than it should for the work it is doing?*
 
-There is no single right answer. The interesting part is picking an approach and justifying it.
-
----
-
-## What it represents
-
-A health score takes multiple signals (CPU temperature, CPU usage, outdoor temperature) and collapses them into one judgment. The challenge: those signals have different units and different meanings. The design question is how to combine them in a way that is useful and honest.
+It is a pure computation — no hardware reads, no IO, no external crates. It takes numbers in and returns a number out. That makes it domain logic: it lives in `domain/score.rs`.
 
 ---
 
-## Approach 1 — Simple temperature threshold
+## The formula
 
-The simplest version: assign a status based on CPU temperature alone.
+Two components:
 
-| Temperature | Status |
-|---|---|
-| Below 70 °C | Cool |
-| 70 – 85 °C | Warm |
-| Above 85 °C | Hot |
+**Temperature delta** — the gap between the hottest sensor reading and the external temperature:
 
-**Pros:** Trivial to implement. Easy to explain.
-**Cons:** Ignores CPU usage. A 65 °C CPU running at 100% for an hour is not "cool."
+```
+delta = hottest_temp - external_temp
+```
+
+A large delta on a cool day means the CPU is generating heat it cannot dissipate. That points to dried thermal paste, a clogged heatsink, or poor airflow.
+
+**Usage weight** — a logarithmic curve that makes low usage more sensitive than high usage:
+
+```
+weight = log(usage + 1) / log(101)
+```
+
+At 0% usage the weight approaches zero. At heavy load, high temperatures are expected — the weight reflects that by growing slowly at the high end.
+
+**Final score:**
+
+```
+score = delta * weight
+```
+
+A high score while usage is low is the red flag: heat without cause. The score is only meaningful as a trend across multiple readings, not in isolation.
 
 ---
 
-## Approach 2 — Combined temperature and usage
+## Where the inputs come from
 
-Score temperature and usage separately, then average them:
+The score function needs three pieces of data:
 
-```
-score = (temp_score + usage_score) / 2
-```
+- **Hottest sensor temperature** — found by a helper method on `CpuInfo`; the sensor API returns individual readings, not a max
+- **Average CPU usage** — `sysinfo` provides `global_cpu_usage()` directly as a single `f32`; no averaging needed
+- **External temperature** — entered by the user interactively; cached in the app layer
 
-Where each component is normalized to 0–100:
-
-```
-temp_score  = 100 − (cpu_temp / 100.0 × 100)
-usage_score = 100 − cpu_usage
-```
-
-**Pros:** Uses both available signals. Gives a numeric value that can trend over time.
-**Cons:** The 100 °C ceiling is arbitrary — meaningful for some CPUs, not others.
+None of these come from inside `domain/`. The score function receives them already computed — it does not fetch, prompt, or search.
 
 ---
 
-## Approach 3 — Delta from ambient temperature
+## Finding the hottest temperature
 
-The gap between CPU temperature and outdoor temperature may be more meaningful than the absolute CPU temperature. A 60 °C CPU on a 40 °C day is different from a 60 °C CPU on a 10 °C day.
-
-```
-delta = cpu_temp − outdoor_temp
-```
-
-| Delta | Status |
-|---|---|
-| Below 40 °C | Cool |
-| 40 – 60 °C | Warm |
-| Above 60 °C | Hot |
-
-**Pros:** Contextual — accounts for ambient conditions. This is what the outdoor temperature feature enables.
-**Cons:** Requires weather data. If the weather fetch fails, there is no delta to compute.
-**Question worth answering:** What should the fallback be when outdoor temperature is unavailable — Approach 1, or no score at all?
-
----
-
-## Approach 4 — Weighted composite
-
-Assign explicit weights to each signal:
-
-```
-score = (temp_normalized × 0.6) + (usage_normalized × 0.4)
-```
-
-**Pros:** Priorities are explicit and easy to tune.
-**Cons:** The weights are subjective. "I chose 0.6 because it felt right" is honest but weak without a rationale.
-
----
-
-## Where it fits in the code
-
-The score is derived from a `Reading` — it does not come from hardware or the network. That makes it pure domain logic. It belongs in `domain/score.rs`, not in `infra/`.
+`sysinfo` gives you individual sensor readings. Finding the hottest is a domain operation — it belongs on `CpuInfo` as a method:
 
 ```rust
-pub enum Status {
-    Cool,
-    Warm,
-    Hot,
-}
+// domain/cpu_info.rs
 
-pub struct HealthScore {
-    pub value: f32,
-    pub status: Status,
-    pub ambient_delta: Option<f32>,
-}
-
-impl HealthScore {
-    pub fn from_reading(reading: &Reading) -> HealthScore {
-        // your formula here
+impl CpuInfo {
+    pub fn hottest(temps: &[CpuInfo]) -> Option<f32> {
+        temps.iter().map(|c| c.temperature).reduce(f32::max)
     }
 }
 ```
 
-`from_reading` takes `&Reading` — a borrow, not ownership — because it only reads the data.
+`reduce(f32::max)` walks the iterator and keeps the largest value. It returns `Option<f32>` because if the slice is empty there is no maximum to return.
 
-Where to call it:
+This is an **associated function** — it takes a slice rather than `&self`, because it operates on a collection of `CpuInfo`, not a single one. You call it as `CpuInfo::hottest(&temps)`.
 
-- `domain/score.rs` — the formula and types (no external crates, no IO)
-- `app/snapshot.rs` — call `HealthScore::from_reading(&reading)` after assembling the `Reading`
-- `interface/display.rs` — format and print the result
+---
 
-The dependency rule holds: `score.rs` imports from `domain/reading.rs` only — nothing from `infra` or `app`.
+## The function signature
+
+```rust
+// domain/score.rs
+
+pub fn compute(cpu_temp: f32, avg_usage: f32, external_temp: f32) -> f32 {
+    // apply formula
+}
+```
+
+Three plain numbers in, one number out. The score function does not know how those numbers were obtained — that is the app layer's job.
+
+---
+
+## The external temperature — app layer concern
+
+The external temperature is not a CLI argument. The user enters it interactively, and it is cached so they are not asked on every loop iteration.
+
+This caching logic belongs in the `app/` layer — not in `domain/score.rs`. The score function does not know where the temperature came from.
+
+A counter approach works well: track how many iterations have passed, and when `interval * count >= 3600`, ask the user again and reset the counter.
+
+```rust
+// conceptual pattern in app/watch.rs
+
+let mut external_temp: f32 = ask_user_for_temp();
+let mut count: u64 = 0;
+
+loop {
+    if interval * count >= 3600 {
+        external_temp = ask_user_for_temp();
+        count = 0;
+    }
+
+    let hottest = CpuInfo::hottest(&temps).unwrap_or(0.0);
+    let usage   = reader.global_usage();
+    let score   = domain::score::compute(hottest, usage, external_temp);
+    // display score
+    count += 1;
+    std::thread::sleep(Duration::from_secs(interval));
+}
+```
+
+`ask_user_for_temp()` belongs in `interface/` — it reads from stdin and returns an `f32`. The app layer calls it; the domain layer never sees it.
+
+---
+
+## Where each piece lives
+
+| Piece | Location |
+|---|---|
+| Formula | `domain/score.rs` |
+| Loop, counter, cached temperature | `app/watch.rs` |
+| Interactive temperature prompt | `interface/` |
+| Score display | `interface/display.rs` |
 
 ---
 
 ## Further reading
 
 - [architecture/project-structure.md](../architecture/project-structure.md) — how domain, app, and interface relate
-- [rust/rust_basics.md](../rust/rust_basics.md) — `enum`, `impl`, and `match` for the Status type
-- [rust/rust_patterns.md](../rust/rust_patterns.md) — `Option` for `ambient_delta`
+- [ideas/snapshot.md](snapshot.md) — how a snapshot record is assembled and saved
+- [rust/rust_patterns.md](../rust/rust_patterns.md) — slices and borrows

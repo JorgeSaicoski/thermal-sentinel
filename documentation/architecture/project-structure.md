@@ -19,7 +19,7 @@ src/
 │   ├── mod.rs
 │   ├── cpu_info.rs      ← CpuInfo struct (temperature + usage as one unit)
 │   ├── reading.rs       ← the Reading struct (one full row of data)
-│   └── score.rs         ← health score formula and status label
+│   └── score.rs         ← health score formula
 │
 ├── app/                 ← use cases — orchestrate the other layers
 │   ├── mod.rs
@@ -160,7 +160,7 @@ pub struct Reading {
 
 Why `pub cpu: CpuInfo` and not flat `cpu_temp`/`cpu_usage` fields? Because those two values have the same origin — they come from the same infra adapter at the same moment. Grouping them reflects that. It also means `sensors.rs` can return a `CpuInfo` that carries both values together, and the caller doesn't have to unpack a tuple or remember which position is which.
 
-`score.rs` — an optional extension. If you want to compute a composite health score from the `Reading`, this is where the formula and types live — no external crates, pure domain logic. See [ideas/health-score.md](../ideas/health-score.md) for several approaches.
+`score.rs` — the health score formula. Takes three `f32` values: hottest CPU temperature, average usage, and external temperature. Returns a score. No external crates, no IO — pure domain logic. See [ideas/health-score.md](../ideas/health-score.md) for the formula and the full architecture.
 
 ### Layer 2 — `infra/`
 

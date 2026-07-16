@@ -348,6 +348,56 @@ Passes values through unchanged while running your closure as a side effect. Rem
 
 ---
 
+## Reading user input from stdin
+
+When a CLI program needs to ask the user for a value interactively, use `std::io::stdin().read_line()`.
+
+```rust
+use std::io::{self, Write};
+
+fn ask_user_for_temp() -> f32 {
+    print!("Enter external temperature (°C): ");
+    io::stdout().flush().unwrap();      // flush so the prompt appears before input
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("failed to read input");
+
+    input.trim().parse::<f32>().unwrap_or(0.0)
+}
+```
+
+What each line does:
+
+- `print!` writes without a newline — the cursor stays on the same line as the prompt
+- `io::stdout().flush()` forces the prompt to appear immediately; without it, the terminal may buffer it and show nothing until after the user types
+- `String::new()` creates an empty, owned string to hold what the user types
+- `read_line(&mut input)` appends the typed line — including the newline character — into `input`; it takes `&mut` because it modifies the string
+- `.trim()` removes the trailing newline and any whitespace
+- `.parse::<f32>()` converts the string to a float; it returns `Result<f32, ParseFloatError>`
+- `.unwrap_or(0.0)` uses `0.0` as a fallback if the input cannot be parsed
+
+**Why `&mut input`?**
+
+`read_line` writes into a buffer you provide. It does not return a new string — it appends into an existing one. The `&mut` is required because the function needs permission to modify your string.
+
+**Parsing is fallible**
+
+`"22.5".parse::<f32>()` succeeds. `"abc".parse::<f32>()` fails. The return type is `Result`, so the same error-handling patterns from earlier in this document apply. For a prompt you want to retry on bad input:
+
+```rust
+loop {
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("failed to read input");
+
+    match input.trim().parse::<f32>() {
+        Ok(temp) => return temp,
+        Err(_)   => println!("not a valid number, try again"),
+    }
+}
+```
+
+---
+
 ## Further reading
 
 - [The Rust Book, Chapter 9 — Error Handling](https://doc.rust-lang.org/book/ch09-00-error-handling.html)
