@@ -10,7 +10,8 @@ pub struct SensorReader{
 
 impl SensorReader {
     pub fn new() -> Self {
-        let components = Components::new_with_refreshed_list();
+        let mut components = Components::new_with_refreshed_list();
+        components.refresh(true);
         Self { components }
     }
     pub fn read_cpu(&self) -> CpuInfo {
